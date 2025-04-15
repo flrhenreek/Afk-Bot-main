@@ -10,7 +10,11 @@ const logger = loggers.logger;
 // Több időpont, amikor újracsatlakozik (HH:mm formátumban)
 const reconnectTimes = ["02:25", "04:35", "10:00"];  
 
+let isLoggedIn = false;
+
 function createBot() {
+   logger.info('Botot létrehoztuk, várjuk a spawn eseményt...');
+
    const bot = mineflayer.createBot({
       username: config['bot-account']['username'],
       password: config['bot-account']['password'],
@@ -20,43 +24,42 @@ function createBot() {
       version: config.server.version,
    });
 
-   function startSwing(bot) {
-      setInterval(() => {
-         bot.swingArm('right');
-         logger.info('Ütöttem!');
-      }, 120000);
-   }
+   bot.on('login', () => {
+      logger.info('✅ Login esemény lefutott, próbálunk bejelentkezni...');
+      setTimeout(() => {
+         if (!isLoggedIn) {
+            logger.info('Bejelentkezés próbálkozás...');
+            bot.chat(`/login ${config.utils['auto-auth'].password}`);
+         }
+      }, 1000); // 1 másodperc várakozás, hogy a szerver stabilizálódjon
+   });
 
-   bot.on('error', (err) => {
-      logger.error('Bot encountered an error: ' + err);
+   bot.on('spawn', () => {
+      logger.info('🎮 Spawn esemény lefutott');
    });
 
    bot.on('end', () => {
-      logger.info('Bot disconnected');
+      logger.warn('❌ Bot disconnectelt');
       checkReconnect();  // Ellenőrizzük, hogy elérkezett-e az újralépési időpont
    });
 
-   // Automatikus login figyelés üzenet alapján
    bot.on('message', (jsonMsg) => {
       const msg = jsonMsg.toString().toLowerCase();
       logger.info('Szerver üzenet: ' + msg);
 
-      const loginNeeded = msg.includes('/login') ||
-                          msg.includes('azonosítsd') ||
-                          msg.includes('jelszó') ||
-                          msg.includes('jelentkezz be') ||
-                          msg.includes('please login') ||
-                          msg.includes('authenticate');
+      // Sikeres bejelentkezés után állítjuk be, hogy a login sikerült
+      if (msg.includes('sikeres bejelentkezés') || msg.includes('you have been logged in')) {
+         isLoggedIn = true;
+         logger.info('✅ Sikeresen bejelentkezve!');
 
-      if (loginNeeded && config.utils['auto-auth'].enabled) {
-         const password = config.utils['auto-auth'].password;
-         logger.info('Szerver bejelentkezést kér - küldjük a /login parancsot...');
-         bot.chat(`/login ${password}`);
+         // Most már végrehajthatjuk a login utáni lépéseket
+         logger.info('✅ Login esemény lefutott');
+         afterLogin();  // Itt folytatódik a bot tevékenysége
       }
    });
 
-   bot.once('spawn', () => {
-      logger.info("Bot joined to the server");
+   function afterLogin() {
+      logger.info("Bot joined to the server (login után)");
 
       // Chat üzenetek
       if (config.utils['chat-messages'].enabled) {
@@ -146,7 +149,7 @@ function createBot() {
             circleWalk(bot, radius);
          }
       }
-   });
+   }
 
    bot.on('chat', (username, message) => {
       if (config.utils['chat-log']) {

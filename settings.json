@@ -20,7 +20,7 @@
 
   "utils": {
     "auto-auth": {
-      "enabled": false,
+      "enabled": true,
       "password": ""
     },
 
