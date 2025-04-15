@@ -11,6 +11,7 @@ const logger = loggers.logger;
 const reconnectTimes = ["02:25", "04:35", "10:00"];  
 
 let isLoggedIn = false;
+let hasSpawned = false;
 
 function createBot() {
    logger.info('Botot létrehoztuk, várjuk a spawn eseményt...');
@@ -25,83 +26,108 @@ function createBot() {
    });
 
    bot.on('login', () => {
-      logger.info('✅ Login esemény lefutott, próbálunk bejelentkezni...');
-      setTimeout(() => {
-         if (!isLoggedIn) {
-            logger.info('Bejelentkezés próbálkozás...');
-            bot.chat(`/login ${config.utils['auto-auth'].password}`);
-         }
-      }, 1000); // 1 másodperc várakozás, hogy a szerver stabilizálódjon
+      logger.info('✅ Login esemény lefutott');
+      if (!isLoggedIn) {
+         setTimeout(() => {
+            if (!isLoggedIn) { // Dupla ellenőrzés, hátha közben automatikusan bejelentkezett
+               logger.info('Bejelentkezés próbálkozás...');
+               bot.chat(`/login ${config.utils['auto-auth'].password}`);
+            } else {
+               logger.info('Már bejelentkeztünk automatikusan, nincs szükség /login parancsra');
+            }
+         }, 2000); // 2 másodperc várakozás az automatikus bejelentkezés üzenetére
+      } else {
+         logger.info('Már bejelentkeztünk, nincs szükség új /login parancsra');
+      }
    });
 
    bot.on('spawn', () => {
-      logger.info('🎮 Spawn esemény lefutott');
+      if (!hasSpawned) {
+         logger.info(`🎮 Spawn esemény lefutott`);
+         hasSpawned = true;
+         setTimeout(() => {
+            hasSpawned = false; // Reseteljük egy idő után, hogy új spawn eseményeket kezelhessünk
+         }, 5000); // 5 másodperc után újra engedélyezzük
+      } else {
+         logger.info(`🎮 Ismételt spawn esemény`);
+      }
    });
 
    bot.on('end', () => {
       logger.warn('❌ Bot disconnectelt');
-      checkReconnect();  // Ellenőrizzük, hogy elérkezett-e az újralépési időpont
+      isLoggedIn = false;
+      hasSpawned = false;
+      if (config.utils['auto-reconnect']) {
+         setTimeout(() => {
+            logger.info('Újracsatlakozási kísérlet...');
+            createBot();
+         }, config.utils['auto-reconnect-delay'] || 5000);
+      } else {
+         checkReconnect();
+      }
    });
 
    bot.on('message', (jsonMsg) => {
-      const msg = jsonMsg.toString().toLowerCase();
-      logger.info('Szerver üzenet: ' + msg);
-
-      // Sikeres bejelentkezés után állítjuk be, hogy a login sikerült
-      if (msg.includes('sikeres bejelentkezés') || msg.includes('you have been logged in')) {
+      const msg = jsonMsg.toString().trim().toLowerCase();
+      if (msg === '') {
+         logger.info('Üres szerverüzenet, figyelmen kívül hagyva');
+         return;
+      }
+      logger.info(`Szerver üzenet: ${msg}`);
+   
+      if (msg.includes('sikeres bejelentkezés') || 
+          msg.includes('you have been logged in') || 
+          msg.includes('sikeres automatizált bejelentkezés')) {
          isLoggedIn = true;
          logger.info('✅ Sikeresen bejelentkezve!');
-
-         // Most már végrehajthatjuk a login utáni lépéseket
-         logger.info('✅ Login esemény lefutott');
-         afterLogin();  // Itt folytatódik a bot tevékenysége
+         afterLogin(); // Közvetlenül hívjuk az afterLogin-t
       }
    });
 
    function afterLogin() {
-      logger.info("Bot joined to the server (login után)");
+   logger.info("Bot joined to the server (login után)");
 
-      // Chat üzenetek
-      if (config.utils['chat-messages'].enabled) {
-         logger.info('Started chat-messages module');
-         let messages = config.utils['chat-messages']['messages'];
+   // Chat üzenetek
+   if (config.utils['chat-messages'].enabled) {
+      logger.info('Started chat-messages module');
+      let messages = config.utils['chat-messages']['messages'];
 
-         if (config.utils['chat-messages'].repeat) {
-            let delay = config.utils['chat-messages']['repeat-delay'];
-            let i = 0;
+      if (config.utils['chat-messages'].repeat) {
+         let delay = config.utils['chat-messages']['repeat-delay'];
+         let i = 0;
 
-            setInterval(() => {
-               bot.chat(`${messages[i]}`);
-               if (i + 1 === messages.length) {
-                  i = 0;
-               } else i++;
-            }, delay * 1000);
-         } else {
-            messages.forEach((msg) => {
-               bot.chat(msg);
-            });
-         }
+         setInterval(() => {
+            bot.chat(`${messages[i]}`);
+            if (i + 1 === messages.length) {
+               i = 0;
+            } else i++;
+         }, delay * 1000);
+      } else {
+         messages.forEach((msg) => {
+            bot.chat(msg);
+         });
       }
+   }
 
-      // Várakozás a szerver átirányítására
+   // Várakozás a szerver átirányítására
+   setTimeout(() => {
+      logger.info('Most már a fő szerveren vagyunk – próbálkozunk a GUI navigációval');
+
+      bot.setQuickBarSlot(0);
+      bot.activateItem();
+
       setTimeout(() => {
-         logger.info('Most már a fő szerveren vagyunk – próbálkozunk a GUI navigációval');
-
-         bot.setQuickBarSlot(0);
-         bot.activateItem();
+         logger.info('Megnyitottuk az iránytű GUI-t');
+         bot.clickWindow(31, 0, 0);
 
          setTimeout(() => {
-            logger.info('Megnyitottuk az iránytű GUI-t');
-            bot.clickWindow(31, 0, 0);
+            logger.info('Kattintás a második GUI-n: 2. sor 7. slot (index: 15)');
+            bot.clickWindow(15, 0, 0);
+         }, 3000);
 
-            setTimeout(() => {
-               logger.info('Kattintás a második GUI-n: 2. sor 7. slot (index: 15)');
-               bot.clickWindow(15, 0, 0);
-            }, 3000);
+      }, 4000);
 
-         }, 2000);
-
-      }, 7000);
+   }, 7000); // Csökkentve 4000-ről 3000-re, mert az automatikus bejelentkezés gyorsabb
 
       const pos = config.position;
 
