@@ -25,7 +25,7 @@
     },
 
     "anti-afk": {
-      "enabled": true, //both need to be true to enable anti-afk or false to disable it
+      "enabled": true,
       "circle-walk": {
         "enabled": true,
         "radius": 2
