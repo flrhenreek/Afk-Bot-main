@@ -70,7 +70,6 @@ function createBot() {
    bot.on('message', (jsonMsg) => {
       const msg = jsonMsg.toString().trim().toLowerCase();
       if (msg === '') {
-         logger.info('Üres szerverüzenet, figyelmen kívül hagyva');
          return;
       }
       logger.info(`Szerver üzenet: ${msg}`);
@@ -111,7 +110,7 @@ function createBot() {
 
    // Várakozás a szerver átirányítására
    setTimeout(() => {
-      logger.info('Most már a fő szerveren vagyunk – próbálkozunk a GUI navigációval');
+      logger.info('Most már a fő szerveren vagyunk - próbálkozunk a GUI navigációval');
 
       bot.setQuickBarSlot(0);
       bot.activateItem();
@@ -127,7 +126,7 @@ function createBot() {
 
       }, 4000);
 
-   }, 7000); // Csökkentve 4000-ről 3000-re, mert az automatikus bejelentkezés gyorsabb
+   }, 7000);
 
       const pos = config.position;
 
@@ -136,44 +135,31 @@ function createBot() {
          bot.pathfinder.setGoal(new GoalBlock(pos.x, pos.y, pos.z));
       }
 
-      if (config.utils['anti-afk'].enabled) {
-         if (config.utils['anti-afk'].sneak) {
-            bot.setControlState('sneak', true);
+      if (config.utils['anti-afk'].enabled && config.utils['anti-afk']['circle-walk'].enabled) {
+         // Function to simulate a short walk and rotation
+         function executeWalkAndRotate() {
+            // Start walking forward
+            bot.setControlState('forward', true);
+            // Rotate slightly (90 degrees)
+            bot.look(bot.entity.yaw + 90, bot.entity.pitch, true);
+            // Stop walking after 2 seconds
+            setTimeout(() => bot.setControlState('forward', false), 2000);
+            logger.info('Jártam egyet!')
          }
-
-         if (config.utils['anti-afk'].jump) {
-            bot.setControlState('jump', true);
+      
+         // Function to schedule the next walk at a random interval between 1-4 minutes
+         function scheduleWalkAndRotate() {
+            const minDelay = 60000; // 1 minute in milliseconds
+            const maxDelay = 240000; // 4 minutes in milliseconds
+            const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+            setTimeout(() => {
+               executeWalkAndRotate();
+               scheduleWalkAndRotate(); // Schedule the next execution
+            }, randomDelay);
          }
-
-         if (config.utils['anti-afk']['hit'].enabled) {
-            let delay = config.utils['anti-afk']['hit']['delay'];
-            let attackMobs = config.utils['anti-afk']['hit']['attack-mobs'];
-
-            setInterval(() => {
-               if (attackMobs) {
-                  let entity = bot.nearestEntity(e => e.type !== 'object' && e.type !== 'player'
-                     && e.type !== 'global' && e.type !== 'orb' && e.type !== 'other');
-
-                  if (entity) {
-                     bot.attack(entity);
-                     return;
-                  }
-               }
-
-               bot.swingArm("right", true);
-            }, delay);
-         }
-
-         if (config.utils['anti-afk'].rotate) {
-            setInterval(() => {
-               bot.look(bot.entity.yaw + 1, bot.entity.pitch, true);
-            }, 100);
-         }
-
-         if (config.utils['anti-afk']['circle-walk'].enabled) {
-            let radius = config.utils['anti-afk']['circle-walk']['radius'];
-            circleWalk(bot, radius);
-         }
+      
+         // Start the first schedule
+         scheduleWalkAndRotate();
       }
    }
 
@@ -250,29 +236,6 @@ function getNextReconnectTime(currentTimeString) {
    }
 
    return nextReconnectTime;
-}
-
-function circleWalk(bot, radius) {
-   return new Promise(() => {
-      const pos = bot.entity.position;
-      const x = pos.x;
-      const y = pos.y;
-      const z = pos.z;
-
-      const points = [
-         [x + radius, y, z],
-         [x, y, z + radius],
-         [x - radius, y, z],
-         [x, y, z - radius],
-      ];
-
-      let i = 0;
-      setInterval(() => {
-         if (i === points.length) i = 0;
-         bot.pathfinder.setGoal(new GoalXZ(points[i][0], points[i][2]));
-         i++;
-      }, 1000);
-   });
 }
 
 createBot();

@@ -25,19 +25,9 @@
     },
 
     "anti-afk": {
-      "enabled": false,
-      "sneak": false,
-      "jump": false,
-      "rotate": false,
-
-      "hit": {
-        "enabled": false,
-        "delay": 1000,
-        "attack-mobs": false
-      },
-
+      "enabled": true, //both need to be true to enable anti-afk or false to disable it
       "circle-walk": {
-        "enabled": false,
+        "enabled": true,
         "radius": 2
       }
     },
@@ -56,7 +46,7 @@
     },
 
     "chat-log": true,
-    "auto-reconnect": false,
-    "auto-reconnect-delay": 5000
+    "auto-reconnect": true,
+    "auto-reconnect-delay": 30000
   }
 }
