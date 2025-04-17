@@ -25,9 +25,9 @@
     },
 
     "anti-afk": {
-      "enabled": true,
+      "enabled": false,
       "circle-walk": {
-        "enabled": true,
+        "enabled": false,
         "radius": 2
       }
     },
@@ -46,7 +46,7 @@
     },
 
     "chat-log": true,
-    "auto-reconnect": true,
-    "auto-reconnect-delay": 30000
+    "auto-reconnect": false,
+    "auto-reconnect-delay": 5000
   }
 }

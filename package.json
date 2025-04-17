@@ -9,9 +9,10 @@
   "author": "urFate",
   "license": "MIT",
   "dependencies": {
+    "is-online": "^11.0.0",
     "log4js": "^6.7.1",
     "minecraft-data": "^3.27.0",
-    "mineflayer": "^4.8.1",
+    "mineflayer": "^4.27.0",
     "mineflayer-pathfinder": "^2.4.2"
   }
 }
