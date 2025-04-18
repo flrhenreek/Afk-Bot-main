@@ -3,21 +3,67 @@ const Movements = require('mineflayer-pathfinder').Movements;
 const pathfinder = require('mineflayer-pathfinder').pathfinder;
 const { GoalBlock } = require('mineflayer-pathfinder').goals;
 const dns = require('dns').promises;
+const readline = require('readline');
 
 const config = require('./settings.json');
 const loggers = require('./logging.js');
 const logger = loggers.logger;
 
 // Több időpont, amikor újraindul (HH:mm formátumban)
-const reconnectTimes = ["02:25", "04:35", "10:00"];
+const reconnectTimes = ["02:25", "04:35", "10:00", "11:00"];
 let reconnectAttempts = 0;
 let isReconnecting = false;
 const MAX_RECONNECT_ATTEMPTS = 3;
-const BASE_DELAY = 30000;
+const BASE_DELAY = 60000; // Növeltük 60 másodpercre a proxy korlátozások miatt
 
 let isLoggedIn = false;
 let hasSpawned = false;
 let bot = null;
+
+// Readline interfész a felhasználói inputhoz
+const rl = readline.createInterface({
+   input: process.stdin,
+   output: process.stdout,
+   prompt: '> '
+});
+
+// Felhasználói input kezelése
+rl.on('line', (input) => {
+   input = input.trim();
+   if (!input) return;
+
+   logger.info(`Felhasználói parancs: ${input}`);
+   const args = input.split(' ');
+   const command = args[0].toLowerCase();
+
+   if (command === '/say' && args.length > 1) {
+      const message = args.slice(1).join(' ');
+      if (bot && isLoggedIn) {
+         bot.chat(message);
+         logger.info(`Elküldött üzenet: ${message}`);
+      } else {
+         logger.warn('Nem lehet üzenetet küldeni, a bot nincs bejelentkezve.');
+      }
+   } else if (command === '/reconnect') {
+      logger.info('Manuális újracsatlakozás indítása...');
+      initiateReconnect(true); // Manuális reconnect
+   } else if (command === '/quit') {
+      logger.info('Bot leállítása...');
+      if (bot) {
+         try {
+            bot.quit('User requested quit');
+         } catch (e) {
+            logger.error(`Hiba a bot leállítása közben: ${e.message}`);
+         }
+      }
+      rl.close();
+      process.exit(0);
+   } else {
+      logger.warn(`Ismeretlen parancs: ${input}`);
+   }
+
+   rl.prompt();
+});
 
 async function createBot() {
    logger.info('Botot létrehoztuk, várjuk a spawn eseményt...');
@@ -38,12 +84,8 @@ async function createBot() {
             if (!isLoggedIn) {
                logger.info('Bejelentkezés próbálkozás...');
                bot.chat(`/login ${config.utils['auto-auth'].password}`);
-            } else {
-               logger.info('Már bejelentkeztünk automatikusan, nincs szükség /login parancsra');
             }
          }, 2000);
-      } else {
-         logger.info('Már bejelentkeztünk, nincs szükség új /login parancsra');
       }
    });
 
@@ -56,14 +98,12 @@ async function createBot() {
          setTimeout(() => {
             hasSpawned = false;
          }, 5000);
-      } else {
-         logger.info(`🎮 Ismételt spawn esemény`);
       }
    });
 
    bot.on('message', (jsonMsg) => {
       const msg = jsonMsg.toString().trim();
-      logger.info(`[Server] ${msg}`); // Log minden szerver üzenetet
+      logger.info(`[Server] ${msg}`);
       const lower = msg.toLowerCase();
       if (
          lower.includes('sikeres bejelentkezés') ||
@@ -163,7 +203,7 @@ async function createBot() {
          return;
       }
 
-      checkReconnect();
+      initiateReconnect();
    });
 
    bot.on('end', async (reason) => {
@@ -181,15 +221,17 @@ async function createBot() {
          reason?.toString().includes('ENOTFOUND') ||
          reason?.toString().includes('read') ||
          reason?.toString().includes('socketClosed') ||
-         reason?.toString().includes('Permissions data')
+         reason?.toString().includes('Permissions data') ||
+         reason?.toString().includes('already connected') ||
+         reason?.toString().includes('logging in too fast')
       ) {
-         logger.warn('💥 Kapcsolódási hiba (pl. permissions vagy hálózat). Újracsatlakozás később...');
+         logger.warn('💥 Kapcsolódási hiba (pl. permissions, hálózat vagy proxy). Újracsatlakozás később...');
          isReconnecting = true;
          waitForInternetThenReconnect();
          return;
       }
 
-      checkReconnect();
+      initiateReconnect();
    });
 
    bot.on('error', (err) => {
@@ -205,50 +247,46 @@ function startReconnectCheck() {
       const currentTimeString = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
       if (reconnectTimes.includes(currentTimeString)) {
          logger.info(`Periodikus ellenőrzés észlelte: ${currentTimeString} újraindítási időpont.`);
-         checkReconnect();
+         initiateReconnect();
       }
    }, 60000); // Minden percben ellenőriz
 }
 
-function checkReconnect() {
+function initiateReconnect(isManual = false) {
    if (isReconnecting) {
       logger.warn('Újracsatlakozás már folyamatban van, nem indítunk újat.');
       return;
    }
 
+   isReconnecting = true;
    const currentTime = new Date();
    const currentTimeString = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
 
-   if (reconnectTimes.includes(currentTimeString)) {
+   // Ha időzített újraindítás van, akkor teljesen újraindul
+   if (!isManual && reconnectTimes.includes(currentTimeString)) {
       logger.info(`Elérkezett az újraindítási időpont: ${currentTimeString}. A bot teljesen újraindul.`);
-      logger.info('Bot folyamat leállítása és teljes újraindítás...');
-
       reconnectAttempts = 0;
-      isReconnecting = true;
-      isLoggedIn = false;
-      hasSpawned = false;
-
-      if (bot) {
-         try {
-            bot.quit('Scheduled restart');
-            logger.info('Jelenlegi bot leállítva.');
-         } catch (e) {
-            logger.error(`Hiba a bot leállítása közben: ${e.message}`);
-         }
-      }
-
-      setTimeout(() => {
-         logger.info('Új bot indítása...');
-         isReconnecting = false;
-         createBot();
-      }, BASE_DELAY);
-      return;
+   } else if (isManual) {
+      logger.info('Manuális újracsatlakozás...');
+      reconnectAttempts = 0; // Reset kísérletek manuális reconnect esetén
+   } else {
+      reconnectAttempts++;
    }
 
-   if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      reconnectAttempts++;
-      logger.info(`Újracsatlakozási kísérlet: ${currentTimeString}, ${reconnectAttempts}. próbálkozás...`);
-      isReconnecting = true;
+   // Meglévő bot leállítása
+   if (bot) {
+      try {
+         bot.quit(isManual ? 'Manual reconnect' : 'Reconnect attempt');
+         logger.info('Jelenlegi bot leállítva.');
+      } catch (e) {
+         logger.error(`Hiba a bot leállítása közben: ${e.message}`);
+      }
+      bot = null; // Nullázás a biztonság kedvéért
+   }
+
+   // Újracsatlakozási logika
+   if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS || isManual) {
+      logger.info(`Újracsatlakozási kísérlet: ${currentTimeString}, ${reconnectAttempts}. próbálkozás${isManual ? ' (manuális)' : ''}...`);
       setTimeout(() => {
          createBot();
          isReconnecting = false;
@@ -260,7 +298,7 @@ function checkReconnect() {
       const nextReconnectTime = getNextReconnectTime(currentTime);
       const timeToWait = nextReconnectTime - Date.now();
       logger.info(`Következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
-      setTimeout(checkReconnect, timeToWait);
+      setTimeout(() => initiateReconnect(), timeToWait);
    }
 }
 
@@ -320,7 +358,7 @@ async function waitForInternetThenReconnect() {
             const nextReconnectTime = getNextReconnectTime(currentTime);
             const timeToWait = nextReconnectTime - Date.now();
             logger.info(`Következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
-            setTimeout(checkReconnect, timeToWait);
+            setTimeout(() => initiateReconnect(), timeToWait);
             return;
          }
 
@@ -341,3 +379,4 @@ async function waitForInternetThenReconnect() {
 
 createBot();
 startReconnectCheck();
+rl.prompt();
