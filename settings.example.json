@@ -37,12 +37,7 @@
       "repeat": true,
       "repeat-delay": 60,
 
-      "messages": [
-        "I'm a regular player ",
-        "My owner is urFate_ ",
-        "I want be alone ",
-        "Visit my GitHub page! (urFate/Afk-Bot)"
-      ]
+      "messages": []
     },
 
     "chat-log": true,
