@@ -8,21 +8,21 @@ const config = require('./settings.json');
 const loggers = require('./logging.js');
 const logger = loggers.logger;
 
-// Több időpont, amikor újracsatlakozik (HH:mm formátumban)
+// Több időpont, amikor újraindul (HH:mm formátumban)
 const reconnectTimes = ["02:25", "04:35", "10:00"];
 let reconnectAttempts = 0;
-let isReconnecting = false; // Állapotjelző, hogy folyamatban van-e újracsatlakozás
-let lastReconnectMinute = null; // Az utolsó újracsatlakozási időpont perc alapú követése
-const MAX_RECONNECT_ATTEMPTS = 3; // Maximális újrapróbálkozások száma
-const BASE_DELAY = 30000; // 10 másodperc alapértelmezett várakozás + 20mp
+let isReconnecting = false;
+const MAX_RECONNECT_ATTEMPTS = 3;
+const BASE_DELAY = 30000;
 
 let isLoggedIn = false;
 let hasSpawned = false;
+let bot = null;
 
 async function createBot() {
    logger.info('Botot létrehoztuk, várjuk a spawn eseményt...');
 
-   const bot = mineflayer.createBot({
+   bot = mineflayer.createBot({
       username: config['bot-account']['username'],
       password: config['bot-account']['password'],
       auth: config['bot-account']['type'],
@@ -51,8 +51,7 @@ async function createBot() {
       if (!hasSpawned) {
          logger.info(`🎮 Spawn esemény lefutott`);
          hasSpawned = true;
-         reconnectAttempts = 0; // Reseteljük a próbálkozásokat sikeres spawn esetén
-         lastReconnectMinute = null; // Reseteljük az időpontot
+         reconnectAttempts = 0;
          isReconnecting = false;
          setTimeout(() => {
             hasSpawned = false;
@@ -61,20 +60,10 @@ async function createBot() {
          logger.info(`🎮 Ismételt spawn esemény`);
       }
    });
-   
-   bot.on('error', (err) => {
-      logger.error(`${err.message}`);
-      isReconnecting = false;
-      // Ha hiba történik, várunk a következő időpontra
-      const currentTime = new Date();
-      const nextReconnectTime = getNextReconnectTime(currentTime);
-      const timeToWait = nextReconnectTime - Date.now();
-      logger.info(`Hiba történt, következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
-      setTimeout(checkReconnect, timeToWait);
-   });
 
    bot.on('message', (jsonMsg) => {
       const msg = jsonMsg.toString().trim();
+      logger.info(`[Server] ${msg}`); // Log minden szerver üzenetet
       const lower = msg.toLowerCase();
       if (
          lower.includes('sikeres bejelentkezés') ||
@@ -145,12 +134,6 @@ async function createBot() {
       }
    }
 
-   bot.on('chat', (username, message) => {
-      if (config.utils['chat-log']) {
-         logger.info(`<${username}> ${message}`);
-      }
-   });
-
    bot.on('goal_reached', () => {
       if (config.position.enabled) {
          logger.info(`Bot arrived to target location. ${bot.entity.position}`);
@@ -174,52 +157,57 @@ async function createBot() {
          logger.error(`Failed to parse kick reason: ${e.message}`);
       }
       logger.warn(`Bot was kicked from the server. Reason: ${reasonText}`);
-   
-      // Ha már újracsatlakozás folyamatban van, ne indítsunk újat
+
       if (isReconnecting) {
          logger.warn('Újracsatlakozás már folyamatban van, nem indítunk újat.');
          return;
       }
-   
-      // Ha a maximális próbálkozások száma elérve, nem próbálkozunk tovább
-      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-         logger.error(`Maximális (${MAX_RECONNECT_ATTEMPTS}) újrapróbálkozási korlát elérve. Várj kézzel!`);
-         reconnectAttempts = 0;
-         lastReconnectMinute = null;
-         return;
-      }
-   
+
       checkReconnect();
    });
-   
+
    bot.on('end', async (reason) => {
-      logger.warn('❌ Bot disconnectelt. Reason: ', reason || 'No reason provided');
+      logger.warn(`❌ Bot disconnectelt. Reason: ${reason || 'No reason provided'}`);
       isLoggedIn = false;
       hasSpawned = false;
-   
+
       if (isReconnecting) {
          logger.warn('Újracsatlakozás már folyamatban van, nem indítunk újat.');
          return;
       }
-   
-      // Ha internet miatt dobott le
+
       if (
          reason?.toString().includes('ECONNRESET') ||
          reason?.toString().includes('ENOTFOUND') ||
          reason?.toString().includes('read') ||
-         reason?.toString().includes('socketClosed')
+         reason?.toString().includes('socketClosed') ||
+         reason?.toString().includes('Permissions data')
       ) {
-         logger.warn('💥 Internet kapcsolat megszakadt. Figyeljük, mikor jön vissza...');
+         logger.warn('💥 Kapcsolódási hiba (pl. permissions vagy hálózat). Újracsatlakozás később...');
          isReconnecting = true;
          waitForInternetThenReconnect();
          return;
       }
-   
-      // Ha más okból dobott le
+
       checkReconnect();
    });
 
-   bot.on('error', (err) => logger.error(`${err.message}`));
+   bot.on('error', (err) => {
+      logger.error(`Bot hiba: ${err.message}`);
+   });
+}
+
+// Periodikus ellenőrzés a reconnectTimes-hoz
+function startReconnectCheck() {
+   setInterval(() => {
+      logger.debug('Periodikus reconnect ellenőrzés...');
+      const currentTime = new Date();
+      const currentTimeString = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+      if (reconnectTimes.includes(currentTimeString)) {
+         logger.info(`Periodikus ellenőrzés észlelte: ${currentTimeString} újraindítási időpont.`);
+         checkReconnect();
+      }
+   }, 60000); // Minden percben ellenőriz
 }
 
 function checkReconnect() {
@@ -231,37 +219,44 @@ function checkReconnect() {
    const currentTime = new Date();
    const currentTimeString = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
 
-   // Ha már próbáltunk ebben a percben, várunk a következő időpontra
-   if (lastReconnectMinute === currentTimeString) {
-      logger.info(`Már próbáltunk ebben a percben (${currentTimeString}), várunk a következő időpontra...`);
-      const nextReconnectTime = getNextReconnectTime(currentTime);
-      const timeToWait = nextReconnectTime - Date.now();
-      logger.info(`Következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
-      setTimeout(checkReconnect, timeToWait);
+   if (reconnectTimes.includes(currentTimeString)) {
+      logger.info(`Elérkezett az újraindítási időpont: ${currentTimeString}. A bot teljesen újraindul.`);
+      logger.info('Bot folyamat leállítása és teljes újraindítás...');
+
+      reconnectAttempts = 0;
+      isReconnecting = true;
+      isLoggedIn = false;
+      hasSpawned = false;
+
+      if (bot) {
+         try {
+            bot.quit('Scheduled restart');
+            logger.info('Jelenlegi bot leállítva.');
+         } catch (e) {
+            logger.error(`Hiba a bot leállítása közben: ${e.message}`);
+         }
+      }
+
+      setTimeout(() => {
+         logger.info('Új bot indítása...');
+         isReconnecting = false;
+         createBot();
+      }, BASE_DELAY);
       return;
    }
 
-   // Ha az időpont szerepel a reconnectTimes-ban, próbálunk csatlakozni
-   if (reconnectTimes.includes(currentTimeString)) {
-      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-         reconnectAttempts++;
-         lastReconnectMinute = currentTimeString; // Jegyezzük fel az időpontot
-         logger.info(`Elérkezett az újralépési időpont: ${currentTimeString}, ${reconnectAttempts}. próbálkozás...`);
-         isReconnecting = true;
-         setTimeout(() => {
-            createBot();
-         }, BASE_DELAY);
-      } else {
-         logger.error(`Maximális (${MAX_RECONNECT_ATTEMPTS}) újrapróbálkozási korlát elérve. Várj kézzel!`);
-         reconnectAttempts = 0;
-         lastReconnectMinute = null;
+   if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      reconnectAttempts++;
+      logger.info(`Újracsatlakozási kísérlet: ${currentTimeString}, ${reconnectAttempts}. próbálkozás...`);
+      isReconnecting = true;
+      setTimeout(() => {
+         createBot();
          isReconnecting = false;
-         const nextReconnectTime = getNextReconnectTime(currentTime);
-         const timeToWait = nextReconnectTime - Date.now();
-         logger.info(`Következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
-         setTimeout(checkReconnect, timeToWait);
-      }
+      }, BASE_DELAY);
    } else {
+      logger.error(`Maximális (${MAX_RECONNECT_ATTEMPTS}) újrapróbálkozási korlát elérve. Várj kézzel!`);
+      reconnectAttempts = 0;
+      isReconnecting = false;
       const nextReconnectTime = getNextReconnectTime(currentTime);
       const timeToWait = nextReconnectTime - Date.now();
       logger.info(`Következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
@@ -271,8 +266,6 @@ function checkReconnect() {
 
 function getNextReconnectTime(currentTime) {
    let nextTime = new Date(currentTime);
-   const currentTimeString = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
-
    let reconnectTimesSorted = reconnectTimes
       .map(time => {
          const [hour, minute] = time.split(":");
@@ -296,8 +289,8 @@ function getNextReconnectTime(currentTime) {
 
 async function waitForInternetThenReconnect() {
    const isOnline = (await import('is-online')).default;
-   let checkInterval = 10000; // 10 másodperc
-   let maxWaitTime = 5 * 60 * 1000; // 5 perc
+   let checkInterval = 10000;
+   let maxWaitTime = 5 * 60 * 1000;
    let waited = 0;
    let checkCount = 0;
 
@@ -306,7 +299,7 @@ async function waitForInternetThenReconnect() {
 
       let serverReachable = false;
       try {
-         await dns.lookup(config.server.ip); // DNS ellenőrzés
+         await dns.lookup(config.server.ip);
          serverReachable = true;
       } catch (e) {
          serverReachable = false;
@@ -321,8 +314,13 @@ async function waitForInternetThenReconnect() {
          checkCount++;
 
          if (waited >= maxWaitTime) {
-            logger.error('❌ 5 perc eltelt, még mindig nincs net vagy nem elérhető a szerver. Állj le.');
+            logger.error('❌ 5 perc eltelt, még mindig nincs net vagy nem elérhető a szerver. Újracsatlakozás időzítésre vált.');
             isReconnecting = false;
+            const currentTime = new Date();
+            const nextReconnectTime = getNextReconnectTime(currentTime);
+            const timeToWait = nextReconnectTime - Date.now();
+            logger.info(`Következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
+            setTimeout(checkReconnect, timeToWait);
             return;
          }
 
@@ -342,3 +340,4 @@ async function waitForInternetThenReconnect() {
 }
 
 createBot();
+startReconnectCheck();
