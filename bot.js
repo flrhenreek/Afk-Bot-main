@@ -8,9 +8,11 @@ const readline = require('readline');
 const config = require('./settings.json');
 const loggers = require('./logging.js');
 const logger = loggers.logger;
+const servers = config.servers;
+let selectedServer = null;
 
 // Több időpont, amikor újraindul (HH:mm formátumban)
-const reconnectTimes = ["02:25", "04:35", "10:00", "11:00"];
+const reconnectTimes = ["02:25", "04:35", "10:00"];
 let reconnectAttempts = 0;
 let isReconnecting = false;
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -83,7 +85,7 @@ async function createBot() {
          setTimeout(() => {
             if (!isLoggedIn) {
                logger.info('Bejelentkezés próbálkozás...');
-               bot.chat(`/login ${config.utils['auto-auth'].password}`);
+               bot.chat(`/login ${selectedServer.password}`);
             }
          }, 2000);
       }
@@ -135,18 +137,38 @@ async function createBot() {
       }
 
       setTimeout(() => {
-         logger.info('Most már a fő szerveren vagyunk - próbálkozunk a GUI navigációval');
-         bot.setQuickBarSlot(0);
-         bot.activateItem();
+         logger.info('Login után, várakozás és GUI-navigáció indul');
+      
+         const delays = selectedServer.delays || {};
+      
          setTimeout(() => {
-            logger.info('Megnyitottuk az iránytű GUI-t');
-            bot.clickWindow(31, 0, 0);
-            setTimeout(() => {
-               logger.info('Kattintás a második GUI-n: 2. sor 7. slot (index: 15)');
-               bot.clickWindow(15, 0, 0);
-            }, 3000);
-         }, 4000);
-      }, 7000);
+            if (bot) bot.chat(`/login ${selectedServer.password}`);
+         }, delays.preLogin || 0);
+      
+         setTimeout(async () => {
+            if (!bot) return;
+      
+            logger.info('Login + texturepack utáni GUI navigáció kezdése');
+      
+            for (const step of selectedServer["gui-navigation"] || []) {
+               if (step.delay) await new Promise(res => setTimeout(res, step.delay));
+      
+               if (step.type === "rightClick") {
+                  bot.activateItem();
+                  logger.info('Jobb klikk aktiválva (pl. lobby belépés)');
+               } else if (step.type === "useCompass") {
+                  bot.setQuickBarSlot(step.hotbarSlot || 0);
+                  bot.activateItem();
+                  logger.info(`Iránytű aktiválva a(z) ${step.hotbarSlot + 1}. slotból`);
+               } else if (step.type === "clickWindow") {
+                  bot.clickWindow(step.slot, 0, 0);
+                  logger.info(`ClickWindow slot: ${step.slot}`);
+               }
+            }
+      
+         }, (delays.preLogin || 0) + (delays.texturePackLoad || 0) + (delays.postLoginRightClick || 0));
+      
+      }, 2000); // a login után rögtön
 
       const pos = config.position;
       if (config.position.enabled) {
@@ -377,6 +399,26 @@ async function waitForInternetThenReconnect() {
    check();
 }
 
-createBot();
-startReconnectCheck();
-rl.prompt();
+function selectServerAndStart() {
+   console.log("Melyik szerveren szeretnél afkolni?");
+   servers.forEach((server, index) => {
+      console.log(`${index + 1}. ${server.name}`);
+   });
+
+   rl.question('Írd be a számot: ', (answer) => {
+      const selected = parseInt(answer);
+      if (isNaN(selected) || selected < 1 || selected > servers.length) {
+         console.log("Érvénytelen választás.");
+         rl.close();
+         process.exit(1);
+      }
+
+      selectedServer = servers[selected - 1];
+      config.server = selectedServer;
+      createBot();
+      startReconnectCheck();
+      rl.prompt();
+   });
+}
+
+selectServerAndStart();

@@ -11,8 +11,7 @@
  1. [Download](https://github.com/urFate/Afk-Bot/tags) the latest package.
  2. Download & install [Node.JS](https://nodejs.org/en/download/)
  3. Run `npm install` command in bot directory
- 4. Create settings.json:
-    Run `cp settings.example.json settings.json` command in bot directory
+ 4. Create settings.json file in bot directory & copy settings.example.json
  
 ## Usage
  

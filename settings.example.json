@@ -5,11 +5,51 @@
     "type": "offline"
   },
 
-  "server": {
-    "ip": "",
+  "servers": [
+  {
+    "name": "fyremc",
+    "ip": "play.fyrehack.hu",
     "port": 25565,
-    "version": "1.18.2"
+    "version": "1.18.2",
+    "password": "",
+    "gui-navigation": [
+      {"slot": 31, "delay": 4000},
+      {"slot": 15, "delay": 3000}
+    ]
   },
+  {
+    "name": "rivals",
+    "ip": "play.rivalsnetwork.hu",
+    "port": 25565,
+    "version": "1.19.3",
+    "password": "",
+    "delays": {
+      "texturePackLoad": 7000
+    },
+    "gui-navigation": [
+      { "type": "useCompass", "hotbarSlot": 4, "delay": 2000 },    
+      { "type": "clickWindow", "slot": 14, "delay": 3000 },        
+      { "type": "clickWindow", "slot": 20, "delay": 3000 }         
+    ]
+  },
+  {
+    "name": "woodcraft",
+    "ip": "play.woodcraft.hu",
+    "port": 25565,
+    "version": "1.19.3",
+    "password": "",
+    "delays": {
+      "preLogin": 17000,
+      "postLoginRightClick": 3000
+    },
+    "gui-navigation": [
+      { "type": "rightClick", "delay": 0 },
+      { "type": "useCompass", "hotbarSlot": 4, "delay": 3000 },
+      { "type": "clickWindow", "slot": 22, "delay": 3000 },
+      { "type": "clickWindow", "slot": 0, "delay": 2000 }    
+    ]
+  }
+],
 
   "position": {
     "enabled": false,
