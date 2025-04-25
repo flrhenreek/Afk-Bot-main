@@ -13,8 +13,9 @@
     "version": "1.18.2",
     "password": "",
     "gui-navigation": [
-      {"slot": 31, "delay": 4000},
-      {"slot": 15, "delay": 3000}
+      { "type": "useCompass", "hotbarSlot": 0, "delay": 2000 },
+      { "type": "clickWindow", "slot": 31, "delay": 4000 },
+      { "type": "clickWindow", "slot": 15, "delay": 3000 }
     ]
   },
   {
