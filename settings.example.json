@@ -12,6 +12,7 @@
     "port": 25565,
     "version": "1.18.2",
     "password": "",
+    "reconnectTimes": ["02:25", "04:35", "10:00"],
     "gui-navigation": [
       { "type": "useCompass", "hotbarSlot": 0, "delay": 2000 },
       { "type": "clickWindow", "slot": 31, "delay": 4000 },
@@ -24,6 +25,7 @@
     "port": 25565,
     "version": "1.19.3",
     "password": "",
+    "reconnectTimes": ["05:30"],
     "delays": {
       "texturePackLoad": 7000
     },
@@ -39,6 +41,7 @@
     "port": 25565,
     "version": "1.19.3",
     "password": "",
+    "reconnectTimes": ["07:15", "14:15", "22:05"],
     "delays": {
       "preLogin": 17000,
       "postLoginRightClick": 3000

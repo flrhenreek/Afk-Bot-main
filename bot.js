@@ -12,7 +12,6 @@ const servers = config.servers;
 let selectedServer = null;
 
 // Több időpont, amikor újraindul (HH:mm formátumban)
-const reconnectTimes = ["02:25", "04:35", "10:00"];
 let reconnectAttempts = 0;
 let isReconnecting = false;
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -107,6 +106,15 @@ async function createBot() {
       const msg = jsonMsg.toString().trim();
       logger.info(`[Server] ${msg}`);
       const lower = msg.toLowerCase();
+   
+      // Itt figyelünk a tiltásra és kapcsolati hibára
+      if (lower.includes('Ki vagy tiltva a szerverkről!') || lower.includes('unable to connect')) {
+         logger.warn('⚠️ Tiltás vagy kapcsolat hiba észlelve, újracsatlakozás...');
+         initiateReconnect(); 
+         return; 
+      }
+   
+      // Eddigi login felismerés marad
       if (
          lower.includes('sikeres bejelentkezés') ||
          lower.includes('you have been logged in') ||
@@ -265,10 +273,13 @@ async function createBot() {
 function startReconnectCheck() {
    setInterval(() => {
       logger.debug('Periodikus reconnect ellenőrzés...');
+
       const currentTime = new Date();
       const currentTimeString = `${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+
+      const reconnectTimes = selectedServer.reconnectTimes || [];
       if (reconnectTimes.includes(currentTimeString)) {
-         logger.info(`Periodikus ellenőrzés észlelte: ${currentTimeString} újraindítási időpont.`);
+         logger.info(`Periodikus ellenőrzés észlelte: ${currentTimeString} újraindítási időpont (${selectedServer.name}).`);
          initiateReconnect();
       }
    }, 60000); // Minden percben ellenőriz
@@ -279,6 +290,8 @@ function initiateReconnect(isManual = false) {
       logger.warn('Újracsatlakozás már folyamatban van, nem indítunk újat.');
       return;
    }
+
+   const reconnectTimes = selectedServer.reconnectTimes || [];
 
    isReconnecting = true;
    const currentTime = new Date();
@@ -324,7 +337,7 @@ function initiateReconnect(isManual = false) {
    }
 }
 
-function getNextReconnectTime(currentTime) {
+function getNextReconnectTime(currentTime, reconnectTimes = []) {
    let nextTime = new Date(currentTime);
    let reconnectTimesSorted = reconnectTimes
       .map(time => {
@@ -377,7 +390,7 @@ async function waitForInternetThenReconnect() {
             logger.error('❌ 5 perc eltelt, még mindig nincs net vagy nem elérhető a szerver. Újracsatlakozás időzítésre vált.');
             isReconnecting = false;
             const currentTime = new Date();
-            const nextReconnectTime = getNextReconnectTime(currentTime);
+            const nextReconnectTime = getNextReconnectTime(currentTime, reconnectTimes);
             const timeToWait = nextReconnectTime - Date.now();
             logger.info(`Következő újracsatlakozási időpont: ${nextReconnectTime.toLocaleTimeString()}, várakozás: ${Math.round(timeToWait / 1000)} másodperc`);
             setTimeout(() => initiateReconnect(), timeToWait);
